@@ -87,6 +87,14 @@ function uniqueValues(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function clampRating(value: number) {
+  return Math.min(5, Math.max(0.5, value));
+}
+
+function snapRating(value: number) {
+  return clampRating(Math.round(value * 2) / 2);
+}
+
 function aggregateBeerSpots(spots: BeerSpot[]): AggregatedBeerSpot[] {
   const groups = new Map<string, BeerSpot[]>();
 
@@ -391,8 +399,9 @@ export function BeerMapScreen({ initialSpots }: Props) {
   function updateRatingFromPointer(event: PointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
-    const raw = (x / rect.width) * 5;
-    const nextRating = Math.min(5, Math.max(0.5, Math.ceil(raw * 2) / 2));
+    const stepWidth = rect.width / 10;
+    const step = Math.max(1, Math.ceil(x / stepWidth));
+    const nextRating = clampRating(step * 0.5);
 
     setForm((current) => ({
       ...current,
@@ -810,13 +819,13 @@ export function BeerMapScreen({ initialSpots }: Props) {
                         if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
                           setForm((current) => ({
                             ...current,
-                            rating: Math.max(0.5, current.rating - 0.5)
+                            rating: snapRating(current.rating - 0.5)
                           }));
                         }
                         if (event.key === "ArrowRight" || event.key === "ArrowUp") {
                           setForm((current) => ({
                             ...current,
-                            rating: Math.min(5, current.rating + 0.5)
+                            rating: snapRating(current.rating + 0.5)
                           }));
                         }
                       }}
