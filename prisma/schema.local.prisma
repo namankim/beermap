@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model BeerSpot {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  description String
+  beerType    String
+  submittedBy String
+  userEmail   String?
+  rating      Float
+  lat         Float
+  lng         Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

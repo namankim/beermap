@@ -12,10 +12,10 @@ A shared beer spot map built with Next.js, Google Maps, Prisma, Supabase Postgre
 
 ## Environments
 
-Use separate Supabase projects for development and production:
+Use separate database targets for development and production:
 
-- Development: used by local `npm run dev` and local Prisma commands.
-- Production: used by Vercel.
+- Development: local SQLite at `prisma/dev.db`.
+- Production: Supabase Postgres used by Vercel.
 
 The app reads environment variables from:
 
@@ -38,11 +38,10 @@ cd "C:\Users\naman\Beermap"
 Copy-Item .env.development.example .env
 ```
 
-Add development values to `.env`.
+Add local development values to `.env`.
 
 ```env
-DATABASE_URL="postgresql://prisma.DEV_PROJECT_REF:YOUR_DEV_PRISMA_PASSWORD@DEV_POOLER_HOST:6543/postgres?pgbouncer=true&connection_limit=1"
-DIRECT_URL="postgresql://prisma.DEV_PROJECT_REF:YOUR_DEV_PRISMA_PASSWORD@DEV_POOLER_HOST:5432/postgres"
+DATABASE_URL="file:./dev.db"
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="YOUR_DEV_GOOGLE_MAPS_API_KEY"
 GOOGLE_CLIENT_ID="YOUR_DEV_GOOGLE_CLIENT_ID"
 GOOGLE_CLIENT_SECRET="YOUR_DEV_GOOGLE_CLIENT_SECRET"
@@ -50,31 +49,7 @@ AUTH_SECRET="GENERATE_A_LONG_RANDOM_SECRET"
 AUTH_URL="http://localhost:3000"
 ```
 
-### 3. Supabase setup
-
-Create a Supabase project, then open the SQL Editor and create a Prisma database user.
-
-```sql
-create user "prisma" with password 'custom_password' bypassrls createdb;
-grant "prisma" to "postgres";
-grant usage on schema public to prisma;
-grant create on schema public to prisma;
-grant all on all tables in schema public to prisma;
-grant all on all routines in schema public to prisma;
-grant all on all sequences in schema public to prisma;
-alter default privileges for role postgres in schema public grant all on tables to prisma;
-alter default privileges for role postgres in schema public grant all on routines to prisma;
-alter default privileges for role postgres in schema public grant all on sequences to prisma;
-```
-
-In each Supabase dashboard, click **Connect** and copy:
-
-- Transaction pooler URL for `DATABASE_URL` in deployed/serverless environments. It uses port `6543`.
-- Session pooler URL for `DIRECT_URL` and Prisma migrations. It uses port `5432`.
-
-Replace `YOUR_*_PRISMA_PASSWORD` with the password from the SQL above.
-
-### 4. Google Cloud setup
+### 3. Google Cloud setup
 
 Enable:
 
@@ -94,28 +69,24 @@ For deployment, also add your production domain:
 If you use separate Google OAuth clients for development and production, put the
 development client values in local `.env` and the production client values in Vercel.
 
-### 5. Install packages
+### 4. Install packages
 
 ```powershell
 npm.cmd install
 ```
 
-### 6. Update Prisma client and database
+### 5. Update local Prisma client and database
 
-Run the Postgres migration against Supabase:
-
-```powershell
-npx.cmd prisma generate
-npx.cmd prisma migrate dev
-```
-
-For production deployments, apply already-created migrations with:
+Local development uses `prisma/schema.local.prisma` and SQLite. It uses
+`prisma db push` so local SQLite schema changes do not mix with the production
+Postgres migration history.
 
 ```powershell
-npx.cmd prisma migrate deploy
+npm.cmd run prisma:generate:local
+npm.cmd run prisma:migrate:local
 ```
 
-### 7. Start the app
+### 6. Start the local app
 
 ```powershell
 npm.cmd run dev
@@ -123,9 +94,34 @@ npm.cmd run dev
 
 Open `http://localhost:3000`.
 
+## Production Supabase setup
+
+Create a Supabase project, then open the SQL Editor and create a Prisma database user.
+
+```sql
+create user "prisma" with password 'custom_password' bypassrls createdb;
+grant "prisma" to "postgres";
+grant usage on schema public to prisma;
+grant create on schema public to prisma;
+grant all on all tables in schema public to prisma;
+grant all on all routines in schema public to prisma;
+grant all on all sequences in schema public to prisma;
+alter default privileges for role postgres in schema public grant all on tables to prisma;
+alter default privileges for role postgres in schema public grant all on routines to prisma;
+alter default privileges for role postgres in schema public grant all on sequences to prisma;
+```
+
+In the Supabase dashboard, click **Connect** and copy:
+
+- Transaction pooler URL for `DATABASE_URL` in deployed/serverless environments. It uses port `6543`.
+- Session pooler URL for `DIRECT_URL` and Prisma migrations. It uses port `5432`.
+
+Replace `YOUR_PROD_PRISMA_PASSWORD` with the password from the SQL above.
+
 ## Notes
 
-- This project uses Supabase Postgres through Prisma.
+- Local development uses SQLite through `prisma/schema.local.prisma`.
+- Production uses Supabase Postgres through `prisma/schema.prisma`.
 - Use `.env.development.example` and `.env.production.example` as templates.
 - Keep `.env`, `.env.local`, `.env.development`, and `.env.production` private.
 - The Google API key and OAuth secret shown in chat should be rotated before real deployment if they were exposed publicly.
@@ -148,4 +144,11 @@ Use this Vercel build command:
 
 ```powershell
 npx.cmd prisma generate && npx.cmd prisma migrate deploy && next build
+```
+
+For production migrations from your local machine, use the production Supabase
+environment variables and the default Prisma schema:
+
+```powershell
+npm.cmd run prisma:deploy
 ```
