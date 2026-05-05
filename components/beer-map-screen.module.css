@@ -54,6 +54,10 @@
   border-bottom: 1px solid #e7e5e4;
 }
 
+.topBar > div:first-child {
+  min-width: 0;
+}
+
 .homeTitle {
   margin: 4px 0 0;
   padding: 0;
@@ -62,7 +66,7 @@
   font: inherit;
   font-size: clamp(3.6rem, 5.2vw, 5.6rem);
   line-height: 1;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: #1f1b16;
   cursor: pointer;
 }
@@ -234,6 +238,14 @@
   font-size: 0.84rem;
 }
 
+.authHint {
+  max-width: 190px;
+  color: #78716c;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .searchBar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -369,6 +381,113 @@
   font-size: 0.88rem;
 }
 
+.optional {
+  color: #78716c;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.styleField {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.styleField legend {
+  padding: 0;
+  color: #44403c;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.styleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.styleOption {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #d6d3d1;
+  color: #57534e;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.styleOption input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.styleOptionSelected {
+  border-color: #4f463f;
+  background: #4f463f;
+  color: #fafaf9;
+}
+
+.ratingField {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  color: #44403c;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.ratingControl {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.ratingControl:focus-visible {
+  outline: 2px solid #4f463f;
+  outline-offset: 4px;
+}
+
+.ratingStars {
+  position: relative;
+  display: inline-block;
+  width: 7.5rem;
+  height: 1.8rem;
+  color: #d6d3d1;
+  font-size: 1.5rem;
+  line-height: 1.8rem;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.ratingStarsEmpty,
+.ratingStarsFilled {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.ratingStarsFilled {
+  color: #f2a63b;
+}
+
+.ratingText {
+  display: block;
+  margin-top: 4px;
+  color: #57534e;
+  font-size: 0.88rem;
+}
+
 .submitButton {
   padding: 15px 18px;
   border-color: #4f463f;
@@ -404,6 +523,17 @@
 .infoWindow h3,
 .infoWindow p {
   margin: 0;
+}
+
+.infoList {
+  display: grid;
+  gap: 6px;
+}
+
+.infoList p {
+  padding-top: 6px;
+  border-top: 1px solid #e7e5e4;
+  color: #57534e;
 }
 
 .deleteButton {
@@ -473,14 +603,40 @@
   }
 
   .topBar {
-    flex-direction: column;
     align-items: flex-start;
+    gap: 12px;
+  }
+
+  .homeTitle {
+    font-size: 2.35rem;
+  }
+
+  .pillButton,
+  .userNameButton {
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 0.88rem;
+  }
+
+  .authArea {
+    justify-content: flex-end;
+    gap: 8px;
   }
 
   .statRow,
-  .fieldRow,
   .searchBar {
     grid-template-columns: 1fr;
+  }
+
+  .fieldRow,
+  .styleGrid,
+  .ratingField {
+    grid-template-columns: 1fr;
+  }
+
+  .authHint {
+    max-width: 150px;
+    text-align: right;
   }
 
   .heroCard,

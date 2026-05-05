@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  PointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import {
   GoogleMap,
   InfoWindowF,
@@ -42,17 +49,122 @@ type SearchSuggestion = {
   secondaryText: string;
 };
 
+type AggregatedBeerSpot = {
+  id: string;
+  key: string;
+  name: string;
+  address: string;
+  description: string;
+  beerType: string;
+  rating: number;
+  lat: number;
+  lng: number;
+  reviewCount: number;
+  descriptions: string[];
+  styles: string[];
+  sourceSpots: BeerSpot[];
+};
+
 type ViewMode = "map" | "mypage";
 
 type Props = {
   initialSpots: BeerSpot[];
 };
 
+const beerStyleOptions = [
+  "Lager",
+  "Pilsner",
+  "Pale Ale",
+  "IPA",
+  "Hazy IPA",
+  "Wheat Beer",
+  "Saison",
+  "Sour",
+  "Stout",
+  "Porter",
+  "Belgian Ale",
+  "Amber Ale",
+  "Brown Ale",
+  "Barleywine",
+  "Cider",
+  "Non-alcoholic"
+];
+
+function parseBeerStyles(value: string) {
+  return value
+    .split(",")
+    .map((style) => style.trim())
+    .filter(Boolean);
+}
+
+function normalizePlacePart(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function getPlaceKey(spot: BeerSpot) {
+  const address = normalizePlacePart(spot.address);
+  const name = normalizePlacePart(spot.name);
+
+  if (address) {
+    return `${name}|${address}`;
+  }
+
+  return `${name}|${spot.lat.toFixed(5)},${spot.lng.toFixed(5)}`;
+}
+
+function uniqueValues(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function aggregateBeerSpots(spots: BeerSpot[]): AggregatedBeerSpot[] {
+  const groups = new Map<string, BeerSpot[]>();
+
+  spots.forEach((spot) => {
+    const key = getPlaceKey(spot);
+    groups.set(key, [...(groups.get(key) ?? []), spot]);
+  });
+
+  return Array.from(groups.entries())
+    .map(([key, sourceSpots]) => {
+      const first = sourceSpots[0];
+      const totalRating = sourceSpots.reduce((sum, spot) => sum + spot.rating, 0);
+      const descriptions = uniqueValues(sourceSpots.map((spot) => spot.description));
+      const styles = uniqueValues(sourceSpots.flatMap((spot) => parseBeerStyles(spot.beerType)));
+
+      return {
+        id: first.id,
+        key,
+        name: first.name,
+        address: first.address,
+        description: descriptions.join(" / "),
+        beerType: styles.join(", "),
+        rating: totalRating / sourceSpots.length,
+        lat: first.lat,
+        lng: first.lng,
+        reviewCount: sourceSpots.length,
+        descriptions,
+        styles,
+        sourceSpots
+      };
+    })
+    .sort((a, b) => {
+      const newestA = Math.max(
+        ...a.sourceSpots.map((spot) => new Date(spot.createdAt).getTime())
+      );
+      const newestB = Math.max(
+        ...b.sourceSpots.map((spot) => new Date(spot.createdAt).getTime())
+      );
+      return newestB - newestA;
+    });
+}
+
 export function BeerMapScreen({ initialSpots }: Props) {
   const { data: session, status } = useSession();
   const [authAction, setAuthAction] = useState<"signin" | "signout" | null>(null);
   const [spots, setSpots] = useState(initialSpots);
-  const [selectedSpot, setSelectedSpot] = useState<BeerSpot | null>(null);
+  const [selectedSpot, setSelectedSpot] = useState<AggregatedBeerSpot | null>(
+    null
+  );
   const [draftLocation, setDraftLocation] = useState(defaultCenter);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +186,8 @@ export function BeerMapScreen({ initialSpots }: Props) {
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const myMapRef = useRef<google.maps.Map | null>(null);
+  const formPanelRef = useRef<HTMLElement | null>(null);
+  const placeNameInputRef = useRef<HTMLInputElement | null>(null);
   const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(
     null
   );
@@ -83,28 +197,34 @@ export function BeerMapScreen({ initialSpots }: Props) {
     libraries
   });
 
+  const places = useMemo(() => aggregateBeerSpots(spots), [spots]);
   const averageRating = useMemo(() => {
-    if (!spots.length) {
+    if (!places.length) {
       return null;
     }
 
-    const total = spots.reduce((sum, spot) => sum + spot.rating, 0);
-    return (total / spots.length).toFixed(1);
-  }, [spots]);
+    const total = places.reduce((sum, spot) => sum + spot.rating, 0);
+    return (total / places.length).toFixed(1);
+  }, [places]);
 
   const canCreate = Boolean(session?.user?.email && session?.user?.name);
   const mySpots = useMemo(
     () => spots.filter((spot) => spot.userEmail === session?.user?.email),
     [session?.user?.email, spots]
   );
+  const myPlaces = useMemo(() => aggregateBeerSpots(mySpots), [mySpots]);
   const myAverageRating = useMemo(() => {
-    if (!mySpots.length) {
+    if (!myPlaces.length) {
       return null;
     }
 
-    const total = mySpots.reduce((sum, spot) => sum + spot.rating, 0);
-    return (total / mySpots.length).toFixed(1);
-  }, [mySpots]);
+    const total = myPlaces.reduce((sum, spot) => sum + spot.rating, 0);
+    return (total / myPlaces.length).toFixed(1);
+  }, [myPlaces]);
+  const selectedBeerStyles = useMemo(
+    () => parseBeerStyles(form.beerType),
+    [form.beerType]
+  );
   const isAuthLoading = authAction !== null;
 
   useEffect(() => {
@@ -158,16 +278,16 @@ export function BeerMapScreen({ initialSpots }: Props) {
   }, [searchQuery]);
 
   useEffect(() => {
-    if (!myMapRef.current || !mySpots.length || viewMode !== "mypage") {
+    if (!myMapRef.current || !myPlaces.length || viewMode !== "mypage") {
       return;
     }
 
     const bounds = new google.maps.LatLngBounds();
-    mySpots.forEach((spot) => {
+    myPlaces.forEach((spot) => {
       bounds.extend({ lat: spot.lat, lng: spot.lng });
     });
     myMapRef.current.fitBounds(bounds);
-  }, [mySpots, viewMode]);
+  }, [myPlaces, viewMode]);
 
   async function refreshSpots() {
     const response = await fetch("/api/spots", {
@@ -296,6 +416,36 @@ export function BeerMapScreen({ initialSpots }: Props) {
     setSearchResults([]);
     setSearchQuery(result.name);
     setViewMode("map");
+    window.requestAnimationFrame(() => {
+      formPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+      placeNameInputRef.current?.focus();
+    });
+  }
+
+  function updateRatingFromPointer(event: PointerEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
+    const raw = (x / rect.width) * 5;
+    const nextRating = Math.min(5, Math.max(0.5, Math.ceil(raw * 2) / 2));
+
+    setForm((current) => ({
+      ...current,
+      rating: nextRating
+    }));
+  }
+
+  function toggleBeerStyle(style: string) {
+    const nextStyles = selectedBeerStyles.includes(style)
+      ? selectedBeerStyles.filter((selectedStyle) => selectedStyle !== style)
+      : [...selectedBeerStyles, style];
+
+    setForm((current) => ({
+      ...current,
+      beerType: nextStyles.join(", ")
+    }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -361,11 +511,62 @@ export function BeerMapScreen({ initialSpots }: Props) {
       return;
     }
 
-    if (selectedSpot?.id === id) {
+    if (selectedSpot?.sourceSpots.some((spot) => spot.id === id)) {
       setSelectedSpot(null);
     }
 
     await refreshSpots();
+  }
+
+  function renderRatingStars(rating: number) {
+    const percentage = `${Math.min(100, Math.max(0, (rating / 5) * 100))}%`;
+
+    return (
+      <span className={styles.ratingStars} aria-hidden="true">
+        <span className={styles.ratingStarsEmpty}>★★★★★</span>
+        <span className={styles.ratingStarsFilled} style={{ width: percentage }}>
+          ★★★★★
+        </span>
+      </span>
+    );
+  }
+
+  function renderSpotInfoWindow(spot: AggregatedBeerSpot) {
+    const mySourceSpots = spot.sourceSpots.filter(
+      (sourceSpot) => sourceSpot.userEmail === session?.user?.email
+    );
+
+    return (
+      <div className={styles.infoWindow}>
+        <h3>{spot.name}</h3>
+        <p>{spot.address || "No address listed"}</p>
+        <p>
+          {renderRatingStars(spot.rating)}
+          <span className={styles.ratingText}>
+            {spot.rating.toFixed(1)}/5 from {spot.reviewCount}{" "}
+            {spot.reviewCount === 1 ? "rating" : "ratings"}
+          </span>
+        </p>
+        {spot.styles.length ? <p>Beer Style: {spot.styles.join(", ")}</p> : null}
+        {spot.descriptions.length ? (
+          <div className={styles.infoList}>
+            {spot.descriptions.map((description) => (
+              <p key={description}>{description}</p>
+            ))}
+          </div>
+        ) : null}
+        {mySourceSpots.map((sourceSpot) => (
+          <button
+            key={sourceSpot.id}
+            className={styles.deleteButton}
+            onClick={() => handleDelete(sourceSpot.id)}
+            type="button"
+          >
+            Delete My Pin
+          </button>
+        ))}
+      </div>
+    );
   }
 
   async function handleSignIn() {
@@ -464,7 +665,7 @@ export function BeerMapScreen({ initialSpots }: Props) {
               type="button"
             >
               <span>Saved Places</span>
-              <strong>{spots.length}</strong>
+              <strong>{viewMode === "map" ? places.length : myPlaces.length}</strong>
             </button>
             <article className={styles.statCard}>
               <span>{viewMode === "map" ? "Average Rating" : "My Average Rating"}</span>
@@ -545,9 +746,9 @@ export function BeerMapScreen({ initialSpots }: Props) {
                   clickableIcons: false
                 }}
               >
-                {spots.map((spot) => (
+                {places.map((spot) => (
                   <MarkerF
-                    key={spot.id}
+                    key={spot.key}
                     position={{ lat: spot.lat, lng: spot.lng }}
                     onClick={() => setSelectedSpot(spot)}
                   />
@@ -570,37 +771,32 @@ export function BeerMapScreen({ initialSpots }: Props) {
                     position={{ lat: selectedSpot.lat, lng: selectedSpot.lng }}
                     onCloseClick={() => setSelectedSpot(null)}
                   >
-                    <div className={styles.infoWindow}>
-                      <h3>{selectedSpot.name}</h3>
-                      <p>{selectedSpot.address || "No address listed"}</p>
-                      <p>{selectedSpot.description}</p>
-                      <p>Beer Style: {selectedSpot.beerType || "Not added"}</p>
-                      <p>Rating: {selectedSpot.rating.toFixed(1)}/5</p>
-                      <p>Added by: {selectedSpot.submittedBy || "Anonymous"}</p>
-                      {selectedSpot.userEmail === session?.user?.email ? (
-                        <button
-                          className={styles.deleteButton}
-                          onClick={() => handleDelete(selectedSpot.id)}
-                          type="button"
-                        >
-                          Delete Pin
-                        </button>
-                      ) : null}
-                    </div>
+                    {renderSpotInfoWindow(selectedSpot)}
                   </InfoWindowF>
                 ) : null}
               </GoogleMap>
             </section>
 
             <aside className={styles.sideStack}>
-              <section className={styles.formPanel}>
+              <section
+                className={styles.formPanel}
+                ref={(element) => {
+                  formPanelRef.current = element;
+                }}
+              >
                 <div className={styles.panelHeader}>
                   <div>
                     <p className={styles.panelEyebrow}>Create</p>
                     <h2>Add a New Pin</h2>
                   </div>
-                  <span className={styles.inlineBadge}>
-                    {session?.user?.name ?? "Sign in required"}
+                  <span
+                    className={
+                      session?.user?.name ? styles.inlineBadge : styles.authHint
+                    }
+                  >
+                    {session?.user?.name
+                      ? "Ready to save"
+                      : "Sign in before saving"}
                   </span>
                 </div>
 
@@ -608,6 +804,7 @@ export function BeerMapScreen({ initialSpots }: Props) {
                   <label>
                     Place Name
                     <input
+                      ref={placeNameInputRef}
                       required
                       value={form.name}
                       onChange={(event) =>
@@ -627,9 +824,8 @@ export function BeerMapScreen({ initialSpots }: Props) {
                   </label>
 
                   <label>
-                    Why do you like it?
+                    Why do you like it? <span className={styles.optional}>Optional</span>
                     <textarea
-                      required
                       rows={4}
                       value={form.description}
                       onChange={(event) =>
@@ -641,47 +837,75 @@ export function BeerMapScreen({ initialSpots }: Props) {
                     />
                   </label>
 
-                  <div className={styles.fieldRow}>
-                    <label>
-                      Beer Style
-                      <input
-                        value={form.beerType}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            beerType: event.target.value
-                          }))
-                        }
-                      />
-                    </label>
+                  <fieldset className={styles.styleField}>
+                    <legend>
+                      Beer Style <span className={styles.optional}>Optional</span>
+                    </legend>
+                    <div className={styles.styleGrid}>
+                      {beerStyleOptions.map((style) => (
+                        <label
+                          key={style}
+                          className={`${styles.styleOption} ${
+                            selectedBeerStyles.includes(style)
+                              ? styles.styleOptionSelected
+                              : ""
+                          }`}
+                        >
+                          <input
+                            checked={selectedBeerStyles.includes(style)}
+                            onChange={() => toggleBeerStyle(style)}
+                            type="checkbox"
+                          />
+                          <span>{style}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
 
-                    <label>
-                      Rating
-                      <input
-                        max={5}
-                        min={0.5}
-                        step={0.5}
-                        type="number"
-                        value={form.rating}
-                        onChange={(event) =>
+                  <div className={styles.ratingField}>
+                    <span>Rating</span>
+                    <div
+                      className={styles.ratingControl}
+                      onPointerDown={(event) => {
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        updateRatingFromPointer(event);
+                      }}
+                      onPointerMove={(event) => {
+                        if (event.buttons === 1) {
+                          updateRatingFromPointer(event);
+                        }
+                      }}
+                      role="slider"
+                      aria-label="Rating"
+                      aria-valuemin={0.5}
+                      aria-valuemax={5}
+                      aria-valuenow={form.rating}
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
                           setForm((current) => ({
                             ...current,
-                            rating: Number(event.target.value)
-                          }))
+                            rating: Math.max(0.5, current.rating - 0.5)
+                          }));
                         }
-                      />
-                    </label>
+                        if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+                          setForm((current) => ({
+                            ...current,
+                            rating: Math.min(5, current.rating + 0.5)
+                          }));
+                        }
+                      }}
+                    >
+                      {renderRatingStars(form.rating)}
+                    </div>
+                    <strong>{form.rating.toFixed(1)}</strong>
                   </div>
 
-                  {session?.user?.name ? (
+                  {!session?.user?.name ? (
                     <p className={styles.helperText}>
-                      Pin will be saved as {session.user.name}.
+                      Sign in with Google before saving this place.
                     </p>
-                  ) : (
-                    <p className={styles.helperText}>
-                      Sign in to save pins with your Google name.
-                    </p>
-                  )}
+                  ) : null}
 
                   {error ? <p className={styles.error}>{error}</p> : null}
 
@@ -704,10 +928,10 @@ export function BeerMapScreen({ initialSpots }: Props) {
                 </div>
 
                 <div className={styles.spotList}>
-                  {spots.length ? (
-                    spots.map((spot) => (
+                  {places.length ? (
+                    places.map((spot) => (
                       <button
-                        key={spot.id}
+                        key={spot.key}
                         className={styles.spotItem}
                         onClick={() => setSelectedSpot(spot)}
                         type="button"
@@ -715,7 +939,8 @@ export function BeerMapScreen({ initialSpots }: Props) {
                         <strong>{spot.name}</strong>
                         <span>{spot.address || "No address listed"}</span>
                         <span>
-                          {spot.rating.toFixed(1)}/5 · {spot.submittedBy || "Anonymous"} ·{" "}
+                          {spot.rating.toFixed(1)}/5 · {spot.reviewCount}{" "}
+                          {spot.reviewCount === 1 ? "rating" : "ratings"} ·{" "}
                           {spot.beerType || "No style yet"}
                         </span>
                       </button>
@@ -735,11 +960,11 @@ export function BeerMapScreen({ initialSpots }: Props) {
                   <p className={styles.panelEyebrow}>My Page</p>
                   <h2>My Average Rating</h2>
                 </div>
-                <span className={styles.inlineBadge}>{mySpots.length} saved</span>
+                <span className={styles.inlineBadge}>{myPlaces.length} saved</span>
               </div>
 
               <GoogleMap
-                center={mySpots[0] ? { lat: mySpots[0].lat, lng: mySpots[0].lng } : defaultCenter}
+                center={myPlaces[0] ? { lat: myPlaces[0].lat, lng: myPlaces[0].lng } : defaultCenter}
                 mapContainerClassName={styles.map}
                 zoom={13}
                 onLoad={(map) => {
@@ -754,9 +979,9 @@ export function BeerMapScreen({ initialSpots }: Props) {
                   clickableIcons: false
                 }}
               >
-                {mySpots.map((spot) => (
+                {myPlaces.map((spot) => (
                   <MarkerF
-                    key={spot.id}
+                    key={spot.key}
                     position={{ lat: spot.lat, lng: spot.lng }}
                     onClick={() => setSelectedSpot(spot)}
                   />
@@ -767,22 +992,7 @@ export function BeerMapScreen({ initialSpots }: Props) {
                     position={{ lat: selectedSpot.lat, lng: selectedSpot.lng }}
                     onCloseClick={() => setSelectedSpot(null)}
                   >
-                    <div className={styles.infoWindow}>
-                      <h3>{selectedSpot.name}</h3>
-                      <p>{selectedSpot.address || "No address listed"}</p>
-                      <p>{selectedSpot.description}</p>
-                      <p>Beer Style: {selectedSpot.beerType || "Not added"}</p>
-                      <p>Rating: {selectedSpot.rating.toFixed(1)}/5</p>
-                      {selectedSpot.userEmail === session?.user?.email ? (
-                        <button
-                          className={styles.deleteButton}
-                          onClick={() => handleDelete(selectedSpot.id)}
-                          type="button"
-                        >
-                          Delete Pin
-                        </button>
-                      ) : null}
-                    </div>
+                    {renderSpotInfoWindow(selectedSpot)}
                   </InfoWindowF>
                 ) : null}
               </GoogleMap>
@@ -798,10 +1008,10 @@ export function BeerMapScreen({ initialSpots }: Props) {
               </div>
 
               <div className={styles.spotList}>
-                {mySpots.length ? (
-                  mySpots.map((spot) => (
+                {myPlaces.length ? (
+                  myPlaces.map((spot) => (
                     <button
-                      key={spot.id}
+                      key={spot.key}
                       className={styles.spotItem}
                       onClick={() => setSelectedSpot(spot)}
                       type="button"
@@ -809,7 +1019,9 @@ export function BeerMapScreen({ initialSpots }: Props) {
                       <strong>{spot.name}</strong>
                       <span>{spot.address || "No address listed"}</span>
                       <span>
-                        {spot.rating.toFixed(1)}/5 · {spot.beerType || "No style yet"}
+                        {spot.rating.toFixed(1)}/5 · {spot.reviewCount}{" "}
+                        {spot.reviewCount === 1 ? "rating" : "ratings"} ·{" "}
+                        {spot.beerType || "No style yet"}
                       </span>
                     </button>
                   ))
