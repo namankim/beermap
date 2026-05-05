@@ -29,7 +29,6 @@ type BeerSpotInput = {
   name: string;
   address: string;
   description: string;
-  beerType: string;
   rating: number;
   lat: number;
   lng: number;
@@ -55,13 +54,11 @@ type AggregatedBeerSpot = {
   name: string;
   address: string;
   description: string;
-  beerType: string;
   rating: number;
   lat: number;
   lng: number;
   reviewCount: number;
   descriptions: string[];
-  styles: string[];
   sourceSpots: BeerSpot[];
 };
 
@@ -70,32 +67,6 @@ type ViewMode = "map" | "mypage";
 type Props = {
   initialSpots: BeerSpot[];
 };
-
-const beerStyleOptions = [
-  "Lager",
-  "Pilsner",
-  "Pale Ale",
-  "IPA",
-  "Hazy IPA",
-  "Wheat Beer",
-  "Saison",
-  "Sour",
-  "Stout",
-  "Porter",
-  "Belgian Ale",
-  "Amber Ale",
-  "Brown Ale",
-  "Barleywine",
-  "Cider",
-  "Non-alcoholic"
-];
-
-function parseBeerStyles(value: string) {
-  return value
-    .split(",")
-    .map((style) => style.trim())
-    .filter(Boolean);
-}
 
 function normalizePlacePart(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -129,7 +100,6 @@ function aggregateBeerSpots(spots: BeerSpot[]): AggregatedBeerSpot[] {
       const first = sourceSpots[0];
       const totalRating = sourceSpots.reduce((sum, spot) => sum + spot.rating, 0);
       const descriptions = uniqueValues(sourceSpots.map((spot) => spot.description));
-      const styles = uniqueValues(sourceSpots.flatMap((spot) => parseBeerStyles(spot.beerType)));
 
       return {
         id: first.id,
@@ -137,13 +107,11 @@ function aggregateBeerSpots(spots: BeerSpot[]): AggregatedBeerSpot[] {
         name: first.name,
         address: first.address,
         description: descriptions.join(" / "),
-        beerType: styles.join(", "),
         rating: totalRating / sourceSpots.length,
         lat: first.lat,
         lng: first.lng,
         reviewCount: sourceSpots.length,
         descriptions,
-        styles,
         sourceSpots
       };
     })
@@ -178,7 +146,6 @@ export function BeerMapScreen({ initialSpots }: Props) {
     name: "",
     address: "",
     description: "",
-    beerType: "",
     rating: 4.5,
     lat: defaultCenter.lat,
     lng: defaultCenter.lng
@@ -221,10 +188,6 @@ export function BeerMapScreen({ initialSpots }: Props) {
     const total = myPlaces.reduce((sum, spot) => sum + spot.rating, 0);
     return (total / myPlaces.length).toFixed(1);
   }, [myPlaces]);
-  const selectedBeerStyles = useMemo(
-    () => parseBeerStyles(form.beerType),
-    [form.beerType]
-  );
   const isAuthLoading = authAction !== null;
 
   useEffect(() => {
@@ -437,17 +400,6 @@ export function BeerMapScreen({ initialSpots }: Props) {
     }));
   }
 
-  function toggleBeerStyle(style: string) {
-    const nextStyles = selectedBeerStyles.includes(style)
-      ? selectedBeerStyles.filter((selectedStyle) => selectedStyle !== style)
-      : [...selectedBeerStyles, style];
-
-    setForm((current) => ({
-      ...current,
-      beerType: nextStyles.join(", ")
-    }));
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -478,7 +430,6 @@ export function BeerMapScreen({ initialSpots }: Props) {
         name: "",
         address: "",
         description: "",
-        beerType: "",
         rating: 4.5,
         lat: draftLocation.lat,
         lng: draftLocation.lng
@@ -547,7 +498,6 @@ export function BeerMapScreen({ initialSpots }: Props) {
             {spot.reviewCount === 1 ? "rating" : "ratings"}
           </span>
         </p>
-        {spot.styles.length ? <p>Beer Style: {spot.styles.join(", ")}</p> : null}
         {spot.descriptions.length ? (
           <div className={styles.infoList}>
             {spot.descriptions.map((description) => (
@@ -802,7 +752,7 @@ export function BeerMapScreen({ initialSpots }: Props) {
 
                 <form className={styles.formCard} onSubmit={handleSubmit}>
                   <label>
-                    Place Name
+                    Place Name <span className={styles.requiredMark}>*</span>
                     <input
                       ref={placeNameInputRef}
                       required
@@ -824,7 +774,7 @@ export function BeerMapScreen({ initialSpots }: Props) {
                   </label>
 
                   <label>
-                    Why do you like it? <span className={styles.optional}>Optional</span>
+                    Why do you like it?
                     <textarea
                       rows={4}
                       value={form.description}
@@ -837,33 +787,8 @@ export function BeerMapScreen({ initialSpots }: Props) {
                     />
                   </label>
 
-                  <fieldset className={styles.styleField}>
-                    <legend>
-                      Beer Style <span className={styles.optional}>Optional</span>
-                    </legend>
-                    <div className={styles.styleGrid}>
-                      {beerStyleOptions.map((style) => (
-                        <label
-                          key={style}
-                          className={`${styles.styleOption} ${
-                            selectedBeerStyles.includes(style)
-                              ? styles.styleOptionSelected
-                              : ""
-                          }`}
-                        >
-                          <input
-                            checked={selectedBeerStyles.includes(style)}
-                            onChange={() => toggleBeerStyle(style)}
-                            type="checkbox"
-                          />
-                          <span>{style}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-
                   <div className={styles.ratingField}>
-                    <span>Rating</span>
+                    <span>Rating <span className={styles.requiredMark}>*</span></span>
                     <div
                       className={styles.ratingControl}
                       onPointerDown={(event) => {
@@ -940,8 +865,7 @@ export function BeerMapScreen({ initialSpots }: Props) {
                         <span>{spot.address || "No address listed"}</span>
                         <span>
                           {spot.rating.toFixed(1)}/5 · {spot.reviewCount}{" "}
-                          {spot.reviewCount === 1 ? "rating" : "ratings"} ·{" "}
-                          {spot.beerType || "No style yet"}
+                          {spot.reviewCount === 1 ? "rating" : "ratings"}
                         </span>
                       </button>
                     ))
@@ -1020,8 +944,7 @@ export function BeerMapScreen({ initialSpots }: Props) {
                       <span>{spot.address || "No address listed"}</span>
                       <span>
                         {spot.rating.toFixed(1)}/5 · {spot.reviewCount}{" "}
-                        {spot.reviewCount === 1 ? "rating" : "ratings"} ·{" "}
-                        {spot.beerType || "No style yet"}
+                        {spot.reviewCount === 1 ? "rating" : "ratings"}
                       </span>
                     </button>
                   ))
